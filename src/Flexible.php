@@ -275,6 +275,9 @@ class Flexible extends Field
         $callbacks = [];
 
         $this->groups = collect($raw)->map(function($item, $key) use ($request, &$callbacks) {
+            // Fix nova dependency container
+            if (!isset($item['layout'])) return;
+
             $layout = $item['layout'];
             $key = $item['key'];
             $attributes = $item['attributes'];
@@ -433,7 +436,7 @@ class Flexible extends Field
             // reference (see Http\TransformsFlexibleErrors).
             static::registerValidationKeys($rules);
 
-            // Then, transform the rules into an array that's actually 
+            // Then, transform the rules into an array that's actually
             // usable by Laravel's Validator.
             $rules = $this->getCleanedRules($rules);
         }
