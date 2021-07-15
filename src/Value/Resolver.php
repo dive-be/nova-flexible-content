@@ -18,6 +18,9 @@ class Resolver implements ResolverInterface
     public function set($model, $attribute, $groups)
     {
         return $model->$attribute = $groups->map(function($group) {
+            // Fix nova dependency container
+            if (!method_exists($group, 'name')) return;
+
             return [
                 'layout' => $group->name(),
                 'key' => $group->key(),
@@ -39,6 +42,11 @@ class Resolver implements ResolverInterface
         $value = $this->extractValueFromResource($resource, $attribute);
 
         return collect($value)->map(function($item) use ($layouts) {
+            // Fix nova dependency container
+            if (!isset($item->layout)) {
+                return;
+            }
+            
             $layout = $layouts->find($item->layout);
 
             if(!$layout) return;

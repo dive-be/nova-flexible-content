@@ -336,6 +336,9 @@ class Flexible extends Field
         $callbacks = [];
 
         $new_groups  = collect($raw)->map(function($item, $key) use ($request, &$callbacks) {
+            // Fix nova dependency container
+            if (!isset($item['layout'])) return;
+
             $layout = $item['layout'];
             $key = $item['key'];
             $attributes = $item['attributes'];
