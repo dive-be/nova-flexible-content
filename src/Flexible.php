@@ -69,9 +69,24 @@ class Flexible extends Field
     {
         parent::__construct($name, $attribute, $resolveCallback);
 
-        $this->button('Add layout');
+        $this->button(__('Add layout'));
+
+        // The original menu as default
+        $this->menu('flexible-drop-menu');
 
         $this->hideFromIndex();
+    }
+
+    /**
+     * @param string $component The name of the component to use for the menu
+     *
+     * @param array  $data
+     *
+     * @return $this
+     */
+    public function menu($component, $data = [])
+    {
+        return $this->withMeta(['menu' => compact('component', 'data')]);
     }
 
     /**
@@ -124,14 +139,16 @@ class Flexible extends Field
     /**
      * Set the field's resolver
      *
-     * @param string $classname
+     * @param mixed $resolver
      * @return $this
      */
-    public function resolver($classname)
+    public function resolver($resolver)
     {
-        $resolver = new $classname();
+        if(is_string($resolver) && is_a($resolver, ResolverInterface::class, true)) {
+            $resolver = new $resolver();
+        }
 
-        if(!($resolver instanceof ResolverInterface)) {
+        if(! ($resolver instanceof ResolverInterface)) {
             throw new \Exception('Resolver Class "' . get_class($resolver) . '" does not implement ResolverInterface.');
         }
 
@@ -155,14 +172,22 @@ class Flexible extends Field
             return $this;
         }
 
+        if($count === 6) {
+            $this->registerLayout(new Layout($arguments[0], $arguments[1], $arguments[2], $arguments[3], $arguments[4], $arguments[5]));
+            return $this;
+        }
+
         if($count !== 1) {
             throw new \Exception('Invalid "addLayout" method call. Expected 1 or 3 arguments, ' . $count . ' given.');
         }
 
         $layout = $arguments[0];
-        $layout = new $layout();
+        
+        if(is_string($layout) && is_a($layout, LayoutInterface::class, true)) {
+            $layout = new $layout();
+        }
 
-        if(!($layout instanceof LayoutInterface)) {
+        if(! ($layout instanceof LayoutInterface)) {
             throw new \Exception('Layout Class "' . get_class($layout) . '" does not implement LayoutInterface.');
         }
 
@@ -175,11 +200,12 @@ class Flexible extends Field
      * Apply a field configuration preset
      *
      * @param string $classname
+     * @param array $params
      * @return $this
      */
-    public function preset($classname)
+    public function preset($classname, $params = [])
     {
-        $preset = resolve($classname);
+        $preset = resolve($classname, $params);
 
         $preset->handle($this);
 
@@ -227,6 +253,40 @@ class Flexible extends Field
     }
 
     /**
+     * Resolve the field's value for display on index and detail views.
+     *
+     * @param mixed $resource
+     * @param string|null $attribute
+     * @return void
+     */
+    public function resolveForDisplay($resource, $attribute = null)
+    {
+        $attribute = $attribute ?? $this->attribute;
+
+        $this->registerOriginModel($resource);
+
+        $this->buildGroups($resource, $attribute);
+
+        $this->value = $this->resolveGroupsForDisplay($this->groups);
+    }
+
+    /**
+     * Check showing on detail.
+     *
+     * @param NovaRequest $request
+     * @param $resource
+     * @return bool
+     */
+    public function isShownOnDetail(NovaRequest $request, $resource): bool
+    {
+        $this->layouts = $this->layouts->each(function($layout) use ($request, $resource) {
+            $layout->filterForDetail($request, $resource);
+        });
+
+        return parent::isShownOnDetail($request, $resource);
+    }
+
+    /**
      * Hydrate the given attribute on the model based on the incoming request.
      *
      * @param  \Laravel\Nova\Http\Requests\NovaRequest  $request
@@ -268,16 +328,14 @@ class Flexible extends Field
     protected function syncAndFillGroups(NovaRequest $request, $requestAttribute)
     {
         if(!($raw = $this->extractValue($request, $requestAttribute))) {
+            $this->fireRemoveCallbacks(collect());
             $this->groups = collect();
             return;
         }
 
         $callbacks = [];
 
-        $this->groups = collect($raw)->map(function($item, $key) use ($request, &$callbacks) {
-            // Fix nova dependency container
-            if (!isset($item['layout'])) return;
-
+        $new_groups  = collect($raw)->map(function($item, $key) use ($request, &$callbacks) {
             $layout = $item['layout'];
             $key = $item['key'];
             $attributes = $item['attributes'];
@@ -290,9 +348,31 @@ class Flexible extends Field
             $callbacks = array_merge($callbacks, $group->fill($scope));
 
             return $group;
-        });
+        })->filter();
+
+        $this->fireRemoveCallbacks($new_groups);
+
+        $this->groups = $new_groups;
 
         return $callbacks;
+    }
+
+    /**
+     * Fire's the remove callbacks on the layouts
+     *
+     * @param $new_groups This should be (all) the new groups to bne compared against to find the removed groups
+     */
+    protected function fireRemoveCallbacks($new_groups) {
+        $new_group_keys = $new_groups->map(function($item) {
+            return $item->inUseKey();
+        });
+        $removed_groups = $this->groups->filter(function ($item) use ($new_group_keys) {
+            return !$new_group_keys->contains($item->inUseKey());
+        })->each(function ($group) {
+            if (method_exists($group, 'fireRemoveCallback')) {
+                $group->fireRemoveCallback($this);
+            }
+        });
     }
 
     /**
@@ -307,17 +387,6 @@ class Flexible extends Field
         $value = $request[$attribute];
 
         if(!$value) return;
-
-        // Dirty fix dep. container
-        if (!is_array($value)) {
-            $value = json_decode($value, true);
-            if (!empty($value[0]['attributes'])) {
-                foreach ($value[0]['attributes'] as $attr => $val) {
-                    $key = explode('__', $attr);
-                    $value[0]['attributes'][(string) $key[1]] = $val;
-                };
-            }
-        }
 
         if(!is_array($value)) {
             throw new \Exception("Unable to parse incoming Flexible content, data should be an array.");
@@ -336,6 +405,20 @@ class Flexible extends Field
     {
         return $groups->map(function($group) {
             return $group->getResolved();
+        });
+    }
+
+    /**
+     * Resolve all contained groups and their fields for display on index and
+     * detail views.
+     *
+     * @param Illuminate\Support\Collection $groups
+     * @return Illuminate\Support\Collection
+     */
+    protected function resolveGroupsForDisplay($groups)
+    {
+        return $groups->map(function ($group) {
+            return $group->getResolvedForDisplay();
         });
     }
 
@@ -360,7 +443,7 @@ class Flexible extends Field
      * Find an existing group based on its key
      *
      * @param  string $key
-     * @return Whitecube\NovaFlexibleContent\Layouts\Layout
+     * @return \Whitecube\NovaFlexibleContent\Layouts\Layout
      */
     protected function findGroup($key)
     {
@@ -374,7 +457,7 @@ class Flexible extends Field
      *
      * @param  string $layout
      * @param  string $key
-     * @return Whitecube\NovaFlexibleContent\Layouts\Layout
+     * @return \Whitecube\NovaFlexibleContent\Layouts\Layout
      */
     protected function newGroup($layout, $key)
     {
