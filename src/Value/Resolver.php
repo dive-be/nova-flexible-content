@@ -46,7 +46,7 @@ class Resolver implements ResolverInterface
             if (!isset($item->layout)) {
                 return;
             }
-            
+
             $layout = $layouts->find($item->layout);
 
             if(!$layout) return;

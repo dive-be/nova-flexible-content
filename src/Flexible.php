@@ -391,6 +391,17 @@ class Flexible extends Field
 
         if(!$value) return;
 
+        // Dirty fix dep. container
+        if (!is_array($value)) {
+            $value = json_decode($value, true);
+            if (!empty($value[0]['attributes'])) {
+                foreach ($value[0]['attributes'] as $attr => $val) {
+                    $key = explode('__', $attr);
+                    $value[0]['attributes'][(string) $key[1]] = $val;
+                };
+            }
+        }
+
         if(!is_array($value)) {
             throw new \Exception("Unable to parse incoming Flexible content, data should be an array.");
         }
