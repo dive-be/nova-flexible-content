@@ -2,11 +2,11 @@
     <div class="z-20 relative" v-if="layouts">
         <div class="relative" v-if="layouts.length > 1">
             <div v-if="isLayoutsDropdownOpen"
-                 class="absolute rounded-lg shadow-lg max-w-full mb-3 pin-b max-h-search overflow-y-auto border border-40"
+                 class="z-20 absolute rounded-lg shadow-lg max-w-full mb-3 pin-b max-h-search overflow-y-auto border border-40"
             >
                 <div>
                     <ul class="list-reset">
-                        <li v-for="layout in layouts" class="border-b border-40">
+                        <li v-for="layout in filteredLayouts" class="border-b border-40" :key="'add-'+layout.name">
                             <a
                                 :dusk="'add-' + layout.name"
                                 @click="addGroup(layout)"
@@ -24,7 +24,7 @@
             tabindex="0"
             class="btn btn-default btn-primary inline-flex items-center relative"
             @click="toggleLayoutsDropdownOrAddDefault"
-            v-if="this.limitCounter > 0"
+            v-if="isBelowLayoutLimits"
         >
             <span>{{ field.button }}</span>
         </button>
@@ -34,12 +34,25 @@
 <script>
 
     export default {
-        props: ['layouts', 'field', 'resourceName', 'resourceId', 'resource', 'errors', 'limitCounter'],
+        props: ['layouts', 'field', 'resourceName', 'resourceId', 'resource', 'errors', 'limitCounter', 'limitPerLayoutCounter'],
 
         data() {
             return {
                 isLayoutsDropdownOpen: false
             };
+        },
+
+        computed: {
+            filteredLayouts() {
+                return this.layouts.filter(layout => {
+                    const count = this.limitPerLayoutCounter[layout.name];
+                    return count === null || count > 0 || typeof count === 'undefined'
+                });
+            },
+
+            isBelowLayoutLimits() {
+                return (this.limitCounter > 0 || this.limitCounter === null) && this.filteredLayouts.length > 0;
+            }
         },
 
         methods: {
@@ -62,6 +75,7 @@
                 if (!layout) return;
 
                 this.$emit('addGroup', layout);
+                Nova.$emit('nova-flexible-content-add-group', layout);
 
                 this.isLayoutsDropdownOpen = false;
             },

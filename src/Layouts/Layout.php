@@ -22,6 +22,21 @@ class Layout implements LayoutInterface, JsonSerializable, ArrayAccess, Arrayabl
     use HidesAttributes;
     use HasFlexible;
 
+
+    /**
+     * Define that Layout is a model, when in fact it is not.
+     *
+     * @var bool
+     */
+    protected $exists = false;
+
+    /**
+     * Define that Layout is a model, when in fact it is not.
+     *
+     * @var bool
+     */
+    protected $wasRecentlyCreated = false;
+
     /**
      * The layout's name
      *
@@ -76,6 +91,11 @@ class Layout implements LayoutInterface, JsonSerializable, ArrayAccess, Arrayabl
      */
     protected $removeCallbackMethod;
 
+    /**
+     * The maximum amount of this layout type that can be added
+     * Can be set in custom layouts
+     */
+    protected $limit;
 
     /**
      * The parent model instance
@@ -85,12 +105,29 @@ class Layout implements LayoutInterface, JsonSerializable, ArrayAccess, Arrayabl
     protected $model;
 
     /**
+     * The relation resolver callbacks for the Layout.
+     *
+     * @var array
+     */
+    protected  $relationResolvers = [];
+
+    /**
+     * The loaded relationships for the Layout.
+     *
+     * @var array
+     */
+    protected $relations = [];
+
+    /**
      * Create a new base Layout instance
      *
      * @param string $title
      * @param string $name
      * @param array $fields
      * @param string $key
+     * @param array $attributes
+     * @param callable|null $removeCallbackMethod
+     * @param int|null $limit
      * @return void
      */
     public function __construct($title = null, $name = null, $fields = null, $key = null, $attributes = [], callable $removeCallbackMethod = null)
@@ -222,13 +259,15 @@ class Layout implements LayoutInterface, JsonSerializable, ArrayAccess, Arrayabl
         $fields = $this->fields->map(function($field) {
             return $this->cloneField($field);
         });
-        
+
         $clone = new static(
             $this->title,
             $this->name,
             $fields,
             $key,
-            $attributes
+            $attributes,
+            $this->removeCallbackMethod,
+            $this->limit
         );
         if (!is_null($this->model)) {
             $clone->setModel($this->model);
@@ -254,7 +293,7 @@ class Layout implements LayoutInterface, JsonSerializable, ArrayAccess, Arrayabl
 
         return $field;
     }
-    
+
     /**
      * Resolve fields using given attributes.
      *
@@ -457,6 +496,7 @@ class Layout implements LayoutInterface, JsonSerializable, ArrayAccess, Arrayabl
      * @param  mixed  $offset
      * @return bool
      */
+    #[\ReturnTypeWillChange]
     public function offsetExists($offset)
     {
         return ! is_null($this->getAttribute($offset));
@@ -468,6 +508,7 @@ class Layout implements LayoutInterface, JsonSerializable, ArrayAccess, Arrayabl
      * @param  mixed  $offset
      * @return mixed
      */
+    #[\ReturnTypeWillChange]
     public function offsetGet($offset)
     {
         return $this->getAttribute($offset);
@@ -480,6 +521,7 @@ class Layout implements LayoutInterface, JsonSerializable, ArrayAccess, Arrayabl
      * @param  mixed  $value
      * @return void
      */
+    #[\ReturnTypeWillChange]
     public function offsetSet($offset, $value)
     {
         $this->setAttribute($offset, $value);
@@ -491,6 +533,7 @@ class Layout implements LayoutInterface, JsonSerializable, ArrayAccess, Arrayabl
      * @param  mixed  $offset
      * @return void
      */
+    #[\ReturnTypeWillChange]
     public function offsetUnset($offset)
     {
         unset($this->attributes[$offset]);
@@ -575,10 +618,25 @@ class Layout implements LayoutInterface, JsonSerializable, ArrayAccess, Arrayabl
     }
 
     /**
+     * Get the dynamic relation resolver if defined or inherited, or return null.
+     * Since it is not possible to define a relation on a layout, this method
+     * returns null
+     *
+     * @param  string  $class
+     * @param  string  $key
+     * @return mixed
+     */
+    public function relationResolver($class, $key)
+    {
+        return null;
+    }
+
+    /**
      * Transform layout for serialization
      *
      * @return array
      */
+    #[\ReturnTypeWillChange]
     public function jsonSerialize()
     {
         // Calling an empty "resolve" first in order to empty all fields
@@ -587,7 +645,8 @@ class Layout implements LayoutInterface, JsonSerializable, ArrayAccess, Arrayabl
         return [
             'name' => $this->name,
             'title' => $this->title,
-            'fields' => $this->fields->jsonSerialize()
+            'fields' => $this->fields->jsonSerialize(),
+            'limit' => $this->limit,
         ];
     }
 

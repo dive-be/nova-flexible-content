@@ -32,6 +32,7 @@
                 :is="field.menu.component"
                 :field="field"
                 :limit-counter="limitCounter"
+                :limit-per-layout-counter="limitPerLayoutCounter"
                 :errors="errors"
                 :resource-name="resourceName"
                 :resource-id="resourceId"
@@ -68,12 +69,26 @@ export default {
         },
 
         limitCounter() {
-            if (this.field.limit === null) {
+            if (this.field.limit === null || typeof(this.field.limit) == "undefined") {
                 return null;
             }
 
             return this.field.limit - Object.keys(this.groups).length;
-        }
+        },
+
+        limitPerLayoutCounter() {
+            return this.layouts.reduce((layoutCounts, layout) => {
+                if (layout.limit === null) {
+                    return layoutCounts;
+                }
+
+                let count = Object.values(this.groups).filter(group => group.name === layout.name).length;
+
+                layoutCounts[layout.name] = layout.limit - count;
+
+                return layoutCounts;
+            }, {});
+        },
     },
 
     data() {
